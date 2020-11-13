@@ -1,0 +1,97 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Stack 1 para blue/green deployment con CFN y ASG
+
+Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+  InstanceType:
+    Type: String
+  KeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+
+Mappings:
+  RegionMap:
+    us-east-1:
+      "AmiId": "ami-09d95fab7fff3776c"
+    us-east-2:
+      "AmiId": "ami-026dea5602e368e96"
+    us-west-2:
+      "AmiId": "ami-0e34e7b9ca0ace12d"
+
+Resources:
+  InstanceSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: InstanceStack01
+      GroupDescription: Stack01
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - CidrIp: 0.0.0.0/0
+          FromPort: 22
+          ToPort: 22
+          IpProtocol: tcp
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: Stack01
+      HealthCheckIntervalSeconds: 30
+      HealthCheckPath: /
+      HealthCheckPort: 8000
+      HealthCheckProtocol: HTTP
+      HealthCheckTimeoutSeconds: 10
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 5
+      Matcher:
+        HttpCode: 200
+      Port: 8000
+      Protocol: HTTP
+      TargetType: instance
+      VpcId: !Ref VpcId
+  LaunchConfiguration:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Properties:
+      ImageId: !FindInMap
+        - RegionMap
+        - !Ref AWS::Region
+        - AmiId
+      InstanceType: !Ref InstanceType
+      KeyName: !Ref KeyName
+      SecurityGroups:
+        - !Ref InstanceSG
+      UserData:
+        Fn::Base64: |
+          #!/bin/bash -xe
+          exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
+          yum update -y
+          yum install -y git python37
+          cd /root/
+          curl -O https://bootstrap.pypa.io/get-pip.py
+          python3 get-pip.py
+          git clone https://github.com/eloyvega/bootcamp-module-devops.git
+          cd ~/bootcamp-module-devops/backend/
+          pip install -r requirements.txt
+          nohup gunicorn -w 3 -b 0.0.0.0:8000 app:app &
+  AutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AvailabilityZones: !GetAZs
+      LaunchConfigurationName: !Ref LaunchConfiguration
+      DesiredCapiacity: 1
+      MaxSize: 2
+      MinSize: 1
+      TargetGroupARNs:
+        - !Ref TargetGroup
+      Tags:
+        - Key: Name
+          Value: MythicalMysfitsStack01
+          PropagateAtLaunch: True
+
+Outputs:
+  SecurityGroup:
+    Value: !Ref InstanceSG
+    Export:
+      Name: Stack01SG
+  TargetGroup:
+    Value: !Ref TargetGroup
+    Export:
+      Name: Stack01TargetGroup

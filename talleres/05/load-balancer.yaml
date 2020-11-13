@@ -1,0 +1,68 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Blue/Green deployment assets
+
+Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+  Subnet01:
+    Type: AWS::EC2::Subnet::Id
+  Subnet02:
+    Type: AWS::EC2::Subnet::Id
+
+Resources:
+  LoadBalancerSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: MythicalMysfitsLB
+      GroupDescription: Load Balancer
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - CidrIp: 0.0.0.0/0
+          FromPort: 80
+          ToPort: 80
+          IpProtocol: tcp
+  Stack01IngressRule:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      FromPort: 8000
+      ToPort: 8000
+      GroupId: !ImportValue Stack01SG
+      IpProtocol: tcp
+      SourceSecurityGroupId: !Ref LoadBalancerSG
+  Stack02IngressRule:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      FromPort: 8000
+      ToPort: 8000
+      GroupId: !ImportValue Stack02SG
+      IpProtocol: tcp
+      SourceSecurityGroupId: !Ref LoadBalancerSG
+  ApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: MythicalMysfits
+      Scheme: internet-facing
+      SecurityGroups:
+        - !Ref LoadBalancerSG
+      Type: application
+      Subnets:
+        - !Ref Subnet01
+        - !Ref Subnet02
+  HttpListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - ForwardConfig:
+            TargetGroups:
+              - TargetGroupArn: !ImportValue Stack01TargetGroup
+                Weight: 1
+              - TargetGroupArn: !ImportValue Stack02TargetGroup
+                Weight: 0
+          Type: forward
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: 80
+      Protocol: HTTP
+
+Outputs:
+  LoadBalancerDNS:
+    Value: !GetAtt ApplicationLoadBalancer.DNSName
