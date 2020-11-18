@@ -1,0 +1,110 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Rolling deployment del API de Mythical Mysfits
+
+Mappings:
+  RegionMap:
+    us-east-1:
+      "AmiId": "ami-09d95fab7fff3776c"
+    us-east-2:
+      "AmiId": "ami-026dea5602e368e96"
+    us-west-2:
+      "AmiId": "ami-0e34e7b9ca0ace12d"
+
+Resources:
+  LoadBalancerSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: MythicalMysfitsLB
+      GroupDescription: Load Balancer
+      SecurityGroupIngress:
+        - CidrIp: 0.0.0.0/0
+          FromPort: 80
+          ToPort: 80
+          IpProtocol: tcp
+  InstanceSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: MythicalMysfitsInstance
+      GroupDescription: Instances
+      SecurityGroupIngress:
+        - SourceSecurityGroupId: !GetAtt LoadBalancerSG.GroupId
+          FromPort: 8000
+          ToPort: 8000
+          IpProtocol: tcp
+        - CidrIp: 0.0.0.0/0
+          FromPort: 22
+          ToPort: 22
+          IpProtocol: tcp
+  LoadBalancer:
+    Type: AWS::ElasticLoadBalancing::LoadBalancer
+    Properties:
+      Scheme: internet-facing
+      SecurityGroups:
+        - !GetAtt LoadBalancerSG.GroupId
+      AvailabilityZones: !GetAZs
+      Listeners:
+        - LoadBalancerPort: 80
+          InstancePort: 8000
+          Protocol: TCP
+          InstanceProtocol: TCP
+      HealthCheck:
+        Target: HTTP:8000/
+        HealthyThreshold: 2
+        Interval: 30
+        Timeout: 10
+        UnhealthyThreshold: 5
+  LaunchConfiguration:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Properties:
+      ImageId: !FindInMap
+        - RegionMap
+        - !Ref AWS::Region
+        - AmiId
+      InstanceType: t2.micro
+      KeyName: mythical-mysfits
+      SecurityGroups:
+        - !GetAtt InstanceSG.GroupId
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash -xe
+          yum update -y
+          yum install -y git python37
+          cd /root/
+          curl -O https://bootstrap.pypa.io/get-pip.py
+          python3 get-pip.py
+          git clone https://github.com/eloyvega/bootcamp-module-devops.git
+          cd ~/bootcamp-module-devops/backend/
+          pip install -r requirements.txt
+          nohup gunicorn -w 3 -b 0.0.0.0:8000 app:app &
+          /opt/aws/bin/cfn-signal -e 0 --region ${AWS::Region} --stack ${AWS::StackName} --resource AutoScalingGroup
+  AutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    CreationPolicy:
+      ResourceSignal:
+        Count: 1
+        Timeout: "PT10M"
+    UpdatePolicy:
+      AutoScalingScheduledAction:
+        IgnoreUnmodifiedGroupSizeProperties: true
+      AutoScalingRollingUpdate:
+        MinInstancesInService: 1
+        MaxBatchSize: 2
+        PauseTime: PT15M
+        WaitOnResourceSignals: true
+    Properties:
+      AvailabilityZones: !GetAZs
+      LaunchConfigurationName: !Ref LaunchConfiguration
+      DesiredCapacity: 1
+      MaxSize: 3
+      MinSize: 1
+      LoadBalancerNames:
+        - !Ref LoadBalancer
+      Tags:
+        - Key: Name
+          Value: MythicalMysfitsAPI
+          PropagateAtLaunch: True
+
+Outputs:
+  LoadBalancerDNS:
+    Description: DNS del Load Balancer
+    Value: !GetAtt LoadBalancer.DNSName
