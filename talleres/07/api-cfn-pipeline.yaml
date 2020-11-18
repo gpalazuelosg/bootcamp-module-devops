@@ -61,7 +61,6 @@ Resources:
         - !Ref AWS::Region
         - AmiId
       InstanceType: t2.micro
-      KeyName: sysops-course-mythical-mysfits.pem
       SecurityGroups:
         - !GetAtt InstanceSG.GroupId
       UserData:
