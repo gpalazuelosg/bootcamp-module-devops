@@ -3,9 +3,14 @@ version: 0.2
 phases:
   install:
     # Definir el runtime adecuado
+    runtime-versions:
+      python: 3.8
   pre_build:
     commands:
       - echo Instalar las dependencias de Python
+      - cd backend
+      - pip3 install -r requirements.txt
   build:
     commands:
       - echo Ejecutar comando de pruebas pytest
+      - pytest
