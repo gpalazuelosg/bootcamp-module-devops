@@ -61,7 +61,7 @@ Resources:
         - !Ref AWS::Region
         - AmiId
       InstanceType: t2.micro
-      KeyName: mythical-mysfits
+      KeyName: sysops-course-mythical-mysfits
       SecurityGroups:
         - !GetAtt InstanceSG.GroupId
       UserData:
@@ -76,13 +76,23 @@ Resources:
           git clone https://github.com/eloyvega/bootcamp-module-devops.git
           cd ~/bootcamp-module-devops/backend/
           pip install -r requirements.txt
-          nohup gunicorn -w 3 -b 0.0.0.0:8000 app:app &
+          nohup gunicorn -w 3 -b 0.0.0.0:8000 app-v2:app &
           /opt/aws/bin/cfn-signal -e 0 --region ${AWS::Region} --stack ${AWS::StackName} --resource AutoScalingGroup
   AutoScalingGroup:
     Type: AWS::AutoScaling::AutoScalingGroup
     # CreationPolicy:
+    CreationPolicy:
+      ResourceSignal:
+        Count: '1'
+        Timeout: PT8M
 
     # UpdatePolicy:
+    UpdatePolicy:
+      AutoScalingRollingUpdate:
+        MinInstancesInService: '1'
+        MaxBatchSize: '2'
+        WaitOnResourceSignals: 'true'
+        PauseTime: PT10M
 
     Properties:
       AvailabilityZones: !GetAZs

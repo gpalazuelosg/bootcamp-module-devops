@@ -1,6 +1,6 @@
 [{
         "ParameterKey": "VpcId",
-        "ParameterValue": ""
+        "ParameterValue": "vpc-8ddf14f0"
     },
     {
         "ParameterKey": "InstanceType",
@@ -8,6 +8,6 @@
     },
     {
         "ParameterKey": "KeyName",
-        "ParameterValue": "mythical-mysfits"
+        "ParameterValue": "sysops-course-mythical-mysfits"
     }
 ]

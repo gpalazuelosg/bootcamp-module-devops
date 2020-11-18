@@ -55,9 +55,9 @@ Resources:
         - ForwardConfig:
             TargetGroups:
               - TargetGroupArn: !ImportValue Stack01TargetGroup
-                Weight: 1
-              - TargetGroupArn: !ImportValue Stack02TargetGroup
                 Weight: 0
+              - TargetGroupArn: !ImportValue Stack02TargetGroup
+                Weight: 1
           Type: forward
       LoadBalancerArn: !Ref ApplicationLoadBalancer
       Port: 80

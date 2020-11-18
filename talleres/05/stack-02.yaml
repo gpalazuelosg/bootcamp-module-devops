@@ -1,7 +1,7 @@
 AWSTemplateFormatVersion: 2010-09-09
-Description: Stack 1 para blue/green deployment con CFN y ASG
+Description: Stack 2 para blue/green deployment con CFN y ASG
 
-Parameters:
+Parameters: # parametros de entrada al programa
   VpcId:
     Type: AWS::EC2::VPC::Id
   InstanceType:
@@ -22,8 +22,8 @@ Resources:
   InstanceSG:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupName: InstanceStack01
-      GroupDescription: Stack01
+      GroupName: InstanceStack02
+      GroupDescription: Stack02
       VpcId: !Ref VpcId
       SecurityGroupIngress:
         - CidrIp: 0.0.0.0/0
@@ -33,7 +33,7 @@ Resources:
   TargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
-      Name: Stack01
+      Name: Stack02
       HealthCheckIntervalSeconds: 30
       HealthCheckPath: /
       HealthCheckPort: 8000
@@ -70,28 +70,28 @@ Resources:
           git clone https://github.com/eloyvega/bootcamp-module-devops.git
           cd ~/bootcamp-module-devops/backend/
           pip install -r requirements.txt
-          nohup gunicorn -w 3 -b 0.0.0.0:8000 app:app &
+          nohup gunicorn -w 3 -b 0.0.0.0:8000 app-v2:app &
   AutoScalingGroup:
     Type: AWS::AutoScaling::AutoScalingGroup
     Properties:
       AvailabilityZones: !GetAZs
       LaunchConfigurationName: !Ref LaunchConfiguration
       DesiredCapacity: 1
-      MaxSize: 2
+      MaxSize: 1
       MinSize: 1
       TargetGroupARNs:
         - !Ref TargetGroup
       Tags:
         - Key: Name
-          Value: MythicalMysfitsStack01
+          Value: MythicalMysfitsStack02
           PropagateAtLaunch: True
 
 Outputs:
   SecurityGroup:
     Value: !Ref InstanceSG
     Export:
-      Name: Stack01SG
+      Name: Stack02SG
   TargetGroup:
     Value: !Ref TargetGroup
     Export:
-      Name: Stack01TargetGroup
+      Name: Stack02TargetGroup
