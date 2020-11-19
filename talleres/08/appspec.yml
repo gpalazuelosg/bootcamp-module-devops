@@ -1,0 +1,14 @@
+version: 0.0
+os: linux
+files:
+  - source: /
+    destination: /home/ec2-user/app
+hooks:
+  ApplicationStop:
+    # Detener app
+  BeforeInstall:
+    # Instalar dependencias
+  AfterInstall:
+    # Instalar librerías
+  ApplicationStart:
+    # Iniciar app

@@ -1,0 +1,118 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Recursos base para taller de CodeDeploy
+
+Parameters:
+  CodeDeployServicePolicy:
+    Type: String
+    Default: arn:aws:iam::aws:policy/service-role/AWSCodeDeployRole
+  KeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Default: mythical-mysfits
+
+Mappings:
+  RegionMap:
+    us-east-1:
+      "AmiId": "ami-09d95fab7fff3776c"
+    us-east-2:
+      "AmiId": "ami-026dea5602e368e96"
+    us-west-2:
+      "AmiId": "ami-0e34e7b9ca0ace12d"
+
+Resources:
+  CodeDeployServiceRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - codedeploy.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      ManagedPolicyArns:
+        - !Ref CodeDeployServicePolicy            
+  InstanceRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+              - ec2.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      Policies:
+        - PolicyName: CodeDeployEC2Permissions
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 's3:Get*'
+                  - 's3:List*'
+                Resource: '*'
+  InstanceProfile:
+    Type: 'AWS::IAM::InstanceProfile'
+    Properties:
+      Path: /
+      Roles:
+        - !Ref InstanceRole
+  S3Bucket:
+    Type: AWS::S3::Bucket
+  InstanceSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: MythicalMysfitsDeployInstance
+      GroupDescription: SG para demo de CodeDeploy
+      SecurityGroupIngress:
+        - CidrIp: 0.0.0.0/0
+          FromPort: 8000
+          ToPort: 8000
+          IpProtocol: tcp
+        - CidrIp: 0.0.0.0/0
+          FromPort: 22
+          ToPort: 22
+          IpProtocol: tcp
+  EC2Instance: 
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: t2.micro
+      ImageId: !FindInMap
+        - RegionMap
+        - !Ref AWS::Region
+        - AmiId
+      KeyName: !Ref KeyName
+      SecurityGroups:
+        - !Ref InstanceSG
+      IamInstanceProfile: !Ref InstanceProfile
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash -xe
+          yum update -y
+          yum install -y ruby wget
+          cd /home/ec2-user
+          wget https://aws-codedeploy-${AWS::Region}.s3.${AWS::Region}.amazonaws.com/latest/install
+          chmod +x ./install
+          ./install auto
+          service codedeploy-agent start
+          service codedeploy-agent status
+      Tags:
+        - Key: Name
+          Value: DeployMythicalMysfits
+
+Outputs:
+  BucketName:
+    Description: Nombre del Bucket de S3
+    Value: !Ref S3Bucket
+  PublicIp:
+    Description: IP del servidor EC2
+    Value: !GetAtt EC2Instance.PublicIp
+  ServiceRole:
+    Description: Nombre del IAM Role para CodeDeploy
+    Value: !Ref CodeDeployServiceRole
