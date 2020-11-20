@@ -1,0 +1,206 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Recursos para VPC Peering
+
+Parameters:
+  KeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Default: peering
+
+Mappings:
+  RegionMap:
+    us-east-1:
+      "AmiId": "ami-09d95fab7fff3776c"
+    us-east-2:
+      "AmiId": "ami-026dea5602e368e96"
+    us-west-1:
+      "AmiId": "ami-01311df3780ebd33e"
+    us-west-2:
+      "AmiId": "ami-0e34e7b9ca0ace12d"
+
+Resources:
+  # VPC A Resources:
+  VpcA:
+    Type: AWS::EC2::VPC
+    Properties: 
+      CidrBlock: 10.1.0.0/16
+      Tags: 
+        - Key: Name
+          Value: VPC-A
+  IgA:
+    Type: AWS::EC2::InternetGateway
+    Properties: 
+      Tags: 
+        - Key: Name
+          Value: IG-A
+  IgAAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VpcA
+      InternetGatewayId: !Ref IgA
+  SubnetAPub:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VpcA
+      AvailabilityZone: !Select [ 0, !GetAZs '' ]
+      CidrBlock: 10.1.1.0/24
+      MapPublicIpOnLaunch: true
+      Tags: 
+        - Key: Name
+          Value: Subnet-A-Pub
+  SubnetAPri:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VpcA
+      AvailabilityZone: !Select [ 1, !GetAZs '' ]
+      CidrBlock: 10.1.2.0/24
+      Tags: 
+        - Key: Name
+          Value: Subnet-A-Pri
+  RtAPub:
+    Type: AWS::EC2::RouteTable
+    Properties: 
+      VpcId: !Ref VpcA
+      Tags: 
+        - Key: Name
+          Value: RtAPub
+  RouteAPub:
+    Type: AWS::EC2::Route
+    DependsOn: IgAAttachment
+    Properties:
+      RouteTableId: !Ref RtAPub
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref IgA
+  SubnetAPubAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref RtAPub
+      SubnetId: !Ref SubnetAPub
+  RtAPri:
+    Type: AWS::EC2::RouteTable
+    Properties: 
+      VpcId: !Ref VpcA
+      Tags: 
+        - Key: Name
+          Value: RtAPri
+  SubnetAPriAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref RtAPri
+      SubnetId: !Ref SubnetAPri
+  SgAPub:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+        GroupDescription: SSH desde internet
+        VpcId: !Ref VpcA
+        SecurityGroupIngress:
+          - IpProtocol: tcp
+            FromPort: 22
+            ToPort: 22
+            CidrIp: 0.0.0.0/0
+  SgAPri:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+        GroupDescription: SSH desde Subnet-A-Pub
+        VpcId: !Ref VpcA
+        SecurityGroupIngress:
+          - IpProtocol: tcp
+            FromPort: 22
+            ToPort: 22
+            CidrIp: 10.1.1.0/24
+  InstanceAPub: 
+    Type: AWS::EC2::Instance
+    Properties: 
+      InstanceType: t2.micro
+      ImageId: !FindInMap
+        - RegionMap
+        - !Ref AWS::Region
+        - AmiId
+      KeyName: !Ref KeyName
+      SubnetId: !Ref SubnetAPub
+      SecurityGroupIds: 
+        - !Ref SgAPub
+      Tags: 
+        - Key: Name
+          Value: Instance-A-Pub
+  InstanceAPri: 
+    Type: AWS::EC2::Instance
+    Properties: 
+      InstanceType: t2.micro
+      ImageId: !FindInMap
+        - RegionMap
+        - !Ref AWS::Region
+        - AmiId
+      KeyName: !Ref KeyName
+      SubnetId: !Ref SubnetAPri
+      SecurityGroupIds: 
+        - !Ref SgAPri
+      Tags: 
+        - Key: Name
+          Value: Instance-A-Pri
+
+
+  # VPC B Resources
+  VpcB:
+    Type: AWS::EC2::VPC
+    Properties: 
+      CidrBlock: 10.2.0.0/16
+      Tags: 
+        - Key: Name
+          Value: VPC-B
+  SubnetBPri:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VpcB
+      AvailabilityZone: !Select [ 0, !GetAZs '' ]
+      CidrBlock: 10.2.1.0/24
+      Tags: 
+        - Key: Name
+          Value: Subnet-B-Pri
+  RtBPri:
+    Type: AWS::EC2::RouteTable
+    Properties: 
+      VpcId: !Ref VpcB
+      Tags: 
+        - Key: Name
+          Value: RtBPri
+  SubnetBPriAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref RtBPri
+      SubnetId: !Ref SubnetBPri
+  SgBPri:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+        GroupDescription: ICMP desde Subnet-A-Pri
+        VpcId: !Ref VpcB
+        SecurityGroupIngress:
+          - IpProtocol: icmp
+            FromPort: 8
+            ToPort: -1
+            CidrIp: 10.1.2.0/24
+  InstanceBPri: 
+    Type: AWS::EC2::Instance
+    Properties: 
+      InstanceType: t2.micro
+      ImageId: !FindInMap
+        - RegionMap
+        - !Ref AWS::Region
+        - AmiId
+      KeyName: !Ref KeyName
+      SubnetId: !Ref SubnetBPri
+      SecurityGroupIds: 
+        - !Ref SgBPri
+      Tags: 
+        - Key: Name
+          Value: Instance-B-Pri
+
+Outputs:
+  InstanceAPubIP:
+    Description: IP pública de Instance-A-Pub
+    Value: !GetAtt InstanceAPub.PublicIp
+  InstanceAPriIP:
+    Description: IP privada de Instance-A-Pri
+    Value: !GetAtt InstanceAPri.PrivateIp
+  InstanceBPriIP:
+    Description: IP privada de Instance-B-Pri
+    Value: !GetAtt InstanceBPri.PrivateIp
