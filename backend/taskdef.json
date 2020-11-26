@@ -1,0 +1,31 @@
+{
+    "executionRoleArn": "mysfits-ecs-TaskExecutionRole-11TSAFDE8UGF",
+    "requiresCompatibilities": ["FARGATE"],
+    "family": "mysfits-ecs-prod-backend",
+    "memory": "512",
+    "cpu": "256",
+    "networkMode": "awsvpc",
+    "containerDefinitions": [
+      {
+        "name": "backend",
+        "image": "%IMAGE_URI%",
+        "essential": true,
+        "cpu": 0,
+        "portMappings": [
+          {
+            "hostPort": 80,
+            "protocol": "tcp",
+            "containerPort": 80
+          }
+        ],
+        "logConfiguration": {
+          "logDriver": "awslogs",
+          "options": {
+            "awslogs-group": "/ecs/mythicalmysfits/prod/backend",
+            "awslogs-region": "%REGION%",
+            "awslogs-stream-prefix": "ecs"
+          }
+        }
+      }
+    ]
+  }
