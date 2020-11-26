@@ -1,0 +1,312 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Description: Infraestructura de ECS para el API de Mythical Mysfits
+
+Parameters:
+  AmazonECSTaskExecutionRolePolicy:
+    Type: String
+    Default: arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+  AWSCodeDeployRoleForECS:
+    Type: String
+    Default: arn:aws:iam::aws:policy/AWSCodeDeployRoleForECS
+
+Resources:
+  VPC: 
+    Type: AWS::CloudFormation::Stack
+    Properties: 
+      TemplateURL: https://bootcamp-institute-cfn-templates.s3.amazonaws.com/vpc-infra.yaml
+  LoadBalancerSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub ${AWS::StackName}-lb-sg
+      GroupDescription: SG for Load Balancer
+      VpcId: !GetAtt VPC.Outputs.VpcId
+      SecurityGroupIngress:
+        - CidrIp: 0.0.0.0/0
+          FromPort: 80
+          ToPort: 80
+          IpProtocol: tcp
+        - CidrIp: 0.0.0.0/0
+          FromPort: 8080
+          ToPort: 8080
+          IpProtocol: tcp
+  ApplicationSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub ${AWS::StackName}-app-sg
+      GroupDescription: SG for app container
+      VpcId: !GetAtt VPC.Outputs.VpcId
+      SecurityGroupIngress:
+        - SourceSecurityGroupId: !Ref LoadBalancerSG
+          FromPort: 80
+          ToPort: 80
+          IpProtocol: tcp
+  EcsCluster:
+    Type: AWS::ECS::Cluster
+    Properties: 
+      ClusterName: !Ref AWS::StackName
+  EcrRepository:
+    Type: AWS::ECR::Repository
+    Properties: 
+      RepositoryName: !Sub ${AWS::StackName}-backend
+  TaskExecutionRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ecs-tasks.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      ManagedPolicyArns:
+        - !Ref AmazonECSTaskExecutionRolePolicy
+  CodeDeployRoleForECS:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - codedeploy.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      ManagedPolicyArns:
+        - !Ref AWSCodeDeployRoleForECS
+
+  # Resources for app in DEVELOPMENT
+  ApplicationLoadBalancerDevelopment:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub ${AWS::StackName}-dev
+      Scheme: internet-facing
+      SecurityGroups:
+        - !Ref LoadBalancerSG
+      Type: application
+      Subnets:
+        - !GetAtt VPC.Outputs.Subnet1Id
+        - !GetAtt VPC.Outputs.Subnet2Id
+  TargetGroupDevelopment:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      VpcId: !GetAtt VPC.Outputs.VpcId
+      Name: !Sub ${AWS::StackName}-dev-backend
+      HealthCheckIntervalSeconds: 30
+      HealthCheckPath: /
+      HealthCheckPort: 80
+      HealthCheckProtocol: HTTP
+      HealthCheckTimeoutSeconds: 10
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 5
+      Matcher:
+        HttpCode: 200
+      Port: 80
+      Protocol: HTTP
+      TargetType: ip
+      TargetGroupAttributes:
+        - Key: deregistration_delay.timeout_seconds
+          Value: 10
+  HttpListenerDevelopment:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref ApplicationLoadBalancerDevelopment
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          ForwardConfig:
+            TargetGroups:
+              - TargetGroupArn: !Ref TargetGroupDevelopment
+  LogGroupDevelopment:
+    Type: AWS::Logs::LogGroup
+    Properties: 
+      LogGroupName: /ecs/mythicalmysfits/dev/backend
+  TaskDefinitionDevelopment:
+    Type: AWS::ECS::TaskDefinition
+    Properties: 
+      Family: !Sub ${AWS::StackName}-dev-backend
+      Cpu: 256
+      Memory: 512
+      ExecutionRoleArn: !Ref TaskExecutionRole
+      NetworkMode: awsvpc
+      RequiresCompatibilities: 
+        - FARGATE
+      ContainerDefinitions: 
+        - Name: backend
+          Image: nginx
+          Essential: true
+          PortMappings:
+            - ContainerPort: 80
+              Protocol: tcp
+          LogConfiguration:
+            LogDriver: awslogs
+            Options: 
+              awslogs-group : /ecs/mythicalmysfits/dev/backend
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: ecs
+  ServiceDevelopment: 
+    Type: AWS::ECS::Service
+    DependsOn:
+      - HttpListenerDevelopment
+    Properties:
+      ServiceName: development-backend
+      Cluster: !Ref EcsCluster
+      LaunchType: FARGATE
+      DesiredCount: 1
+      TaskDefinition: !Ref TaskDefinitionDevelopment
+      LoadBalancers:
+        - TargetGroupArn: !Ref TargetGroupDevelopment
+          ContainerPort: 80
+          ContainerName: backend
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          SecurityGroups: 
+            - !Ref ApplicationSG
+          Subnets: 
+            - !GetAtt VPC.Outputs.Subnet1Id
+            - !GetAtt VPC.Outputs.Subnet2Id
+
+  # Resources for app in PRODUCTION
+  ApplicationLoadBalancerProduction:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub ${AWS::StackName}-prod
+      Scheme: internet-facing
+      SecurityGroups:
+        - !Ref LoadBalancerSG
+      Type: application
+      Subnets:
+        - !GetAtt VPC.Outputs.Subnet1Id
+        - !GetAtt VPC.Outputs.Subnet2Id
+  TargetGroupProduction1:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      VpcId: !GetAtt VPC.Outputs.VpcId
+      Name: !Sub ${AWS::StackName}-prod-backend1
+      HealthCheckIntervalSeconds: 30
+      HealthCheckPath: /
+      HealthCheckPort: 80
+      HealthCheckProtocol: HTTP
+      HealthCheckTimeoutSeconds: 10
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 5
+      Matcher:
+        HttpCode: 200
+      Port: 80
+      Protocol: HTTP
+      TargetType: ip
+      TargetGroupAttributes:
+        - Key: deregistration_delay.timeout_seconds
+          Value: 10
+  TargetGroupProduction2:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      VpcId: !GetAtt VPC.Outputs.VpcId
+      Name: !Sub ${AWS::StackName}-prod-backend2
+      HealthCheckIntervalSeconds: 30
+      HealthCheckPath: /
+      HealthCheckPort: 80
+      HealthCheckProtocol: HTTP
+      HealthCheckTimeoutSeconds: 10
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 5
+      Matcher:
+        HttpCode: 200
+      Port: 80
+      Protocol: HTTP
+      TargetType: ip
+      TargetGroupAttributes:
+        - Key: deregistration_delay.timeout_seconds
+          Value: 10
+  HttpListenerProduction:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref ApplicationLoadBalancerProduction
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          ForwardConfig:
+            TargetGroups:
+              - TargetGroupArn: !Ref TargetGroupProduction1
+  TestListenerProduction:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref ApplicationLoadBalancerProduction
+      Port: 8080
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          ForwardConfig:
+            TargetGroups:
+              - TargetGroupArn: !Ref TargetGroupProduction2
+  LogGroupProduction:
+    Type: AWS::Logs::LogGroup
+    Properties: 
+      LogGroupName: /ecs/mythicalmysfits/prod/backend
+  TaskDefinitionProduction:
+    Type: AWS::ECS::TaskDefinition
+    Properties: 
+      Family: !Sub ${AWS::StackName}-prod-backend
+      Cpu: 256
+      Memory: 512
+      ExecutionRoleArn: !Ref TaskExecutionRole
+      NetworkMode: awsvpc
+      RequiresCompatibilities: 
+        - FARGATE
+      ContainerDefinitions: 
+        - Name: backend
+          Image: nginx
+          Essential: true
+          PortMappings:
+            - ContainerPort: 80
+              Protocol: tcp
+          LogConfiguration:
+            LogDriver: awslogs
+            Options: 
+              awslogs-group : /ecs/mythicalmysfits/prod/backend
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: ecs
+  ServiceProduction: 
+    Type: AWS::ECS::Service
+    DependsOn:
+      - HttpListenerProduction
+      - TestListenerProduction
+    Properties:
+      ServiceName: production-backend
+      Cluster: !Ref EcsCluster
+      LaunchType: FARGATE
+      DesiredCount: 1
+      TaskDefinition: !Ref TaskDefinitionProduction
+      LoadBalancers:
+        - TargetGroupArn: !Ref TargetGroupProduction1
+          ContainerPort: 80
+          ContainerName: backend
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          SecurityGroups: 
+            - !Ref ApplicationSG
+          Subnets: 
+            - !GetAtt VPC.Outputs.Subnet1Id
+            - !GetAtt VPC.Outputs.Subnet2Id
+      DeploymentController:
+        Type: CODE_DEPLOY
+
+Outputs:
+  DevLoadBalancerDNS:
+    Description: URL del Load Balancer en DEV
+    Value: !GetAtt ApplicationLoadBalancerDevelopment.DNSName
+  ProdLoadBalancerDNS:
+    Description: URL del Load Balancer en PROD
+    Value: !GetAtt ApplicationLoadBalancerProduction.DNSName
+  TaskExecutionRoleARN:
+    Description: ARN del Role para las Tasks de ECS
+    Value: !Ref TaskExecutionRole

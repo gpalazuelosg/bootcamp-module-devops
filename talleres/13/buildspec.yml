@@ -1,0 +1,30 @@
+version: 0.2
+
+env:
+  variables:
+    ECR_URI: REPLACE_ME_ECR_URI
+
+phases:
+  pre_build:
+    commands:
+      - cd backend/
+      - $(aws ecr get-login --no-include-email --region $AWS_DEFAULT_REGION)
+      - COMMIT_HASH=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-7)
+      - IMAGE_TAG=${COMMIT_HASH:=latest}
+  build:
+    commands:
+      - docker build -t $ECR_URI:$IMAGE_TAG .
+  post_build:
+    commands:
+      - docker push $ECR_URI:$IMAGE_TAG
+      - echo File for dev deployment
+      - printf '[{"name":"%s","imageUri":"%s"}]' backend $ECR_URI:$IMAGE_TAG > imagedefinitions.json
+      - echo Files for prod deployment
+      - sed -i -e "s|%IMAGE_URI%|$ECR_URI:$IMAGE_TAG|g" taskdef.json
+      - sed -i -e "s|%REGION%|$AWS_DEFAULT_REGION|g" taskdef.json
+artifacts:
+  files:
+    - backend/imagedefinitions.json
+    - backend/taskdef.json
+    - backend/appspec.yaml
+  discard-paths: yes
