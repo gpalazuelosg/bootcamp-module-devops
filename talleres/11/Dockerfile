@@ -1,11 +1,11 @@
-FROM 
+FROM python:3.7-alpine
 
-EXPOSE 
+EXPOSE 8000
 
-WORKDIR 
+WORKDIR /opt/app
 
-COPY 
+COPY . .
 
-RUN 
+RUN pip install -r requirements.txt
 
 ENTRYPOINT ["gunicorn", "-w", "3", "-b", "0.0.0.0:8000", "app:app"]

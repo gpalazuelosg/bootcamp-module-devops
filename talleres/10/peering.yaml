@@ -4,7 +4,7 @@ Description: Recursos para VPC Peering
 Parameters:
   KeyName:
     Type: AWS::EC2::KeyPair::KeyName
-    Default: peering
+    Default: sysops-course-mythical-mysfits
 
 Mappings:
   RegionMap:
